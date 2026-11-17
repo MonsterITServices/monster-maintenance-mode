@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Pro Maintenance Mode (100% Free)
- * Plugin URI:  https://github.com/monsteritservice/WPMaintenanceMode
- * Description: Full-featured maintenance mode & coming soon plugin. Includes countdown timer, AJAX email subscription + CSV export, role/IP/URL bypass, bot whitelisting, custom styling, and SEO 503 headers. Zero upsells.
- * Version:     1.0.0
- * Author:      Monster IT Service
+ * Plugin URI:  https://github.com/MonsterITServices/WPMaintenanceMode
+ * Description: Full-featured maintenance & coming soon plugin. Features 6 selectable visual templates, selectable 200 OK / 503 HTTP modes, live admin preview, countdown timer, AJAX email capture + CSV export, and role/IP/URL bypass.
+ * Version:     2.0.0
+ * Author:      Monster IT Services Ltd
  * License:     GPLv2 or later
  * Text Domain: pro-maintenance-free
  */
@@ -30,7 +30,7 @@ class Pro_Maintenance_Free {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_init', array( $this, 'handle_csv_export' ) );
 		add_action( 'admin_init', array( $this, 'handle_clear_subscribers' ) );
-		add_action( 'admin_enqueue_scripts', array( $this, 'admin_Lock_scripts' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'admin_enqueue_scripts' ) );
 		add_action( 'admin_bar_menu', array( $this, 'admin_bar_indicator' ), 100 );
 		add_action( 'admin_head', array( $this, 'admin_bar_styles' ) );
 		add_action( 'wp_head', array( $this, 'admin_bar_styles' ) );
@@ -45,29 +45,77 @@ class Pro_Maintenance_Free {
 	}
 
 	/**
+	 * Available visual templates
+	 */
+	public function get_templates() {
+		return array(
+			'glass'      => array(
+				'name'        => 'Modern Glassmorphism',
+				'description' => 'Frosted glass card with smooth blur effects and glowing accents.',
+				'preview_bg'  => 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+				'accent'      => '#3b82f6',
+			),
+			'split'      => array(
+				'name'        => 'Corporate Split-Screen',
+				'description' => 'Two-column agency layout separating your message from the countdown & lead form.',
+				'preview_bg'  => 'linear-gradient(90deg, #111827 50%, #1f2937 50%)',
+				'accent'      => '#10b981',
+			),
+			'editorial'  => array(
+				'name'        => 'Minimalist Editorial',
+				'description' => 'Classic serif typography with clean lines, ideal for publishers and authors.',
+				'preview_bg'  => '#f8fafc',
+				'accent'      => '#000000',
+			),
+			'terminal'   => array(
+				'name'        => 'Cyber Terminal',
+				'description' => 'Matrix-inspired dark command prompt window with phosphor green monospace text.',
+				'preview_bg'  => '#050505',
+				'accent'      => '#22c55e',
+			),
+			'neon'       => array(
+				'name'        => 'Neon Synthwave Grid',
+				'description' => 'Animated 3D perspective horizon grid with cyberpunk magenta and cyan glow.',
+				'preview_bg'  => 'linear-gradient(180deg, #090014 0%, #240046 100%)',
+				'accent'      => '#f72585',
+			),
+			'brutalist'  => array(
+				'name'        => 'Bold Industrial',
+				'description' => 'High-contrast brutalist card with heavy black borders and hard offset shadows.',
+				'preview_bg'  => '#facc15',
+				'accent'      => '#000000',
+			),
+		);
+	}
+
+	/**
 	 * Default plugin options
 	 */
 	public function get_defaults() {
 		return array(
 			'status'            => 0,
+			'http_status'       => '200',
+			'template'          => 'glass',
 			'bypass_roles'      => array( 'administrator' ),
 			'exclude_urls'      => "/wp-admin\n/wp-login.php\n/feed",
 			'whitelisted_ips'   => '',
 			'bypass_bots'       => 1,
 			'disable_rest'      => 0,
-			'page_title'        => get_bloginfo( 'name' ) . ' - Under Maintenance',
+			'page_title'        => get_bloginfo( 'name' ) . ' - Coming Soon',
+			'badge_text'        => 'SCHEDULED UPDATE',
 			'heading'           => 'We Are Currently Working on Something Awesome',
-			'content'           => 'Our website is undergoing scheduled maintenance. Thank you for your patience. Please check back soon!',
+			'content'           => 'Our website is undergoing scheduled maintenance and upgrades. Thank you for your patience—please check back soon or subscribe below for updates!',
 			'bg_color'          => '#0f172a',
 			'bg_image'          => '',
 			'text_color'        => '#f8fafc',
 			'accent_color'      => '#3b82f6',
+			'use_custom_colors' => 0,
 			'custom_css'        => '',
 			'countdown_enabled' => 1,
 			'countdown_end'     => gmdate( 'Y-m-d\TH:i', strtotime( '+7 days' ) ),
 			'auto_disable'      => 1,
 			'subscribe_enabled' => 1,
-			'subscribe_text'    => 'Notify me when it is ready:',
+			'subscribe_text'    => 'Get notified the moment we go live:',
 			'social_facebook'   => '',
 			'social_twitter'    => '',
 			'social_instagram'  => '',
@@ -105,7 +153,7 @@ class Pro_Maintenance_Free {
 	/**
 	 * Enqueue WP Media Uploader and Color Picker in Admin
 	 */
-	public function admin_Lock_scripts( $hook ) {
+	public function admin_enqueue_scripts( $hook ) {
 		if ( 'settings_page_pro-maintenance-free' !== $hook ) {
 			return;
 		}
@@ -134,14 +182,16 @@ class Pro_Maintenance_Free {
 		register_setting( 'pmf_settings_group', $this->option_name, array($this, 'sanitize_settings' ) );
 	}
 
-	public function sanitize_settings( $input ) {$defaults = $this->get_defaults();$clean    = array();
+	public function sanitize_settings( $input ) {$defaults  = $this->get_defaults();$templates = array_keys( $this->get_templates() );$clean     = array();
 
 		$clean['status']            = ! empty( $input['status'] ) ? 1 : 0;
+		$clean['http_status']       = ( isset($input['http_status'] ) && '503' === $input['http_status'] ) ? '503' : '200';$clean['template']          = ( isset( $input['template'] ) && in_array($input['template'], $templates, true ) ) ?$input['template'] : 'glass';
 		$clean['bypass_bots']       = ! empty( $input['bypass_bots'] ) ? 1 : 0;
 		$clean['disable_rest']      = ! empty( $input['disable_rest'] ) ? 1 : 0;
 		$clean['countdown_enabled'] = ! empty( $input['countdown_enabled'] ) ? 1 : 0;
 		$clean['auto_disable']      = ! empty( $input['auto_disable'] ) ? 1 : 0;
 		$clean['subscribe_enabled'] = ! empty( $input['subscribe_enabled'] ) ? 1 : 0;
+		$clean['use_custom_colors'] = ! empty( $input['use_custom_colors'] ) ? 1 : 0;
 
 		$clean['bypass_roles'] = array( 'administrator' );
 		if ( ! empty( $input['bypass_roles'] ) && is_array($input['bypass_roles'] ) ) {
@@ -150,6 +200,7 @@ class Pro_Maintenance_Free {
 
 		$clean['exclude_urls']      = isset($input['exclude_urls'] ) ? sanitize_textarea_field( $input['exclude_urls'] ) : '';$clean['whitelisted_ips']   = isset( $input['whitelisted_ips'] ) ? sanitize_textarea_field( $input['whitelisted_ips'] ) : '';
 		$clean['page_title']        = isset($input['page_title'] ) ? sanitize_text_field( $input['page_title'] ) :$defaults['page_title'];
+		$clean['badge_text']        = isset($input['badge_text'] ) ? sanitize_text_field( $input['badge_text'] ) :$defaults['badge_text'];
 		$clean['heading']           = isset($input['heading'] ) ? sanitize_text_field( $input['heading'] ) :$defaults['heading'];
 		$clean['content']           = isset($input['content'] ) ? wp_kses_post( $input['content'] ) :$defaults['content'];
 		$clean['bg_color']          = isset($input['bg_color'] ) ? sanitize_hex_color( $input['bg_color'] ) :$defaults['bg_color'];
@@ -175,7 +226,7 @@ class Pro_Maintenance_Free {
 
 		$wp_admin_bar->add_node( array(
 			'id'    => 'pmf-status',
-			'title' => $active ? '<span class="pmf-dot pmf-active"></span> Maintenance: ON' : '<span class="pmf-dot pmf-inactive"></span> Maintenance: OFF',
+			'title' => $active ? '<span class="pmf-dot pmf-active"></span> Maintenance: ON (' . strtoupper( esc_html( $settings['template'] ) ) . ')' : '<span class="pmf-dot pmf-inactive"></span> Maintenance: OFF',
 			'href'  => admin_url( 'options-general.php?page=pro-maintenance-free' ),
 			'meta'  => array(
 				'class' => $active ? 'pmf-bar-on' : 'pmf-bar-off',
@@ -281,6 +332,11 @@ class Pro_Maintenance_Free {
 	 * Determine if current visitor should bypass maintenance mode
 	 */
 	private function should_bypass() {
+		// Allow instant live preview for admins via ?pmf_preview=1
+		if ( isset( $_GET['pmf_preview'] ) && current_user_can( 'manage_options' ) ) {
+			return false;
+		}
+
 		$settings =$this->get_settings();
 
 		// 1. Check if maintenance mode is disabled
@@ -310,262 +366,3 @@ class Pro_Maintenance_Free {
 		// 4. Check Logged-in User Roles
 		if ( is_user_logged_in() ) {
 			if ( current_user_can( 'manage_options' ) ) {
-				return true;
-			}
-			$user  = wp_get_current_user();
-			$roles = (array)$user->roles;
-			if ( array_intersect( $roles, (array)$settings['bypass_roles'] ) ) {
-				return true;
-			}
-		}
-
-		// 5. Check Whitelisted IPs
-		$client_ip =$this->get_client_ip();
-		if ( ! empty( $settings['whitelisted_ips'] ) && ! empty( $client_ip ) ) {
-			$ips = array_filter( array_map( 'trim', explode( "\n", $settings['whitelisted_ips'] ) ) );
-			foreach ( $ips as$allowed_ip ) {
-				if ( $client_ip ===$allowed_ip || ( false !== strpos( $client_ip,$allowed_ip ) ) ) {
-					return true;
-				}
-			}
-		}
-
-		// 6. Check Excluded URLs / Slugs
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		if ( ! empty( $settings['exclude_urls'] ) && ! empty( $request_uri ) ) {
-			$urls = array_filter( array_map( 'trim', explode( "\n", $settings['exclude_urls'] ) ) );
-			foreach ( $urls as$excluded_path ) {
-				if ( '/' !== $excluded_path && false !== stripos( $request_uri,$excluded_path ) ) {
-					return true;
-				}
-			}
-		}
-
-		// 7. Check Search Engine Bots
-		if ( ! empty( $settings['bypass_bots'] ) ) {
-			$user_agent = isset($_SERVER['HTTP_USER_AGENT'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) ) : '';$bots       = array( 'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider', 'yandexbot', 'facebot', 'ia_archiver' );
-			foreach ( $bots as$bot ) {
-				if ( false !== strpos( $user_agent,$bot ) ) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Block REST API if configured
-	 */
-	public function restrict_rest_api( $result ) {
-		if ( ! empty( $result ) ) {
-			return $result;
-		}
-		$settings =$this->get_settings();
-		if ( ! empty( $settings['status'] ) && ! empty( $settings['disable_rest'] ) && !$this->should_bypass() ) {
-			return new WP_Error(
-				'rest_maintenance_mode',
-				'The site is currently undergoing maintenance.',
-				array( 'status' => 503 )
-			);
-		}
-		return $result;
-	}
-
-	/**
-	 * Helper: Get Visitor IP
-	 */
-	private function get_client_ip() {
-		if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
-			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) );
-		}
-		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-			$ip_list = explode( ',', sanitize_text_field( wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR'] ) ) );
-			return trim( $ip_list[0] );
-		}
-		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-	}
-
-	/**
-	 * Render the Frontend Maintenance Page
-	 */
-	public function render_maintenance_page() {
-		if ( $this->should_bypass() ) {
-			return;
-		}
-
-		$settings    =$this->get_settings();
-		$retry_after = max( 60, absint($settings['retry_after'] ) );
-
-		// Send strict SEO 503 headers
-		nocache_headers();
-		$protocol = wp_get_server_protocol();
-		header( "$protocol 503 Service Unavailable", true, 503 );
-		header( "Retry-After: $retry_after" );
-
-		$end_timestamp = ! empty( $settings['countdown_end'] ) ? strtotime( $settings['countdown_end'] ) * 1000 : 0;
-		?>
-		<!DOCTYPE html>
-		<html <?php language_attributes(); ?>>
-		<head>
-			<meta charset="<?php bloginfo( 'charset' ); ?>">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<meta name="robots" content="noindex, nofollow">
-			<title><?php echo esc_html( $settings['page_title'] ); ?></title>
-			<style>
-				:root {
-					--bg-color: <?php echo esc_attr( $settings['bg_color'] ); ?>;
-					--text-color: <?php echo esc_attr( $settings['text_color'] ); ?>;
-					--accent-color: <?php echo esc_attr( $settings['accent_color'] ); ?>;
-				}
-				* { box-sizing: border-box; margin: 0; padding: 0; }
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-					background-color: var(--bg-color);
-					<?php if ( ! empty( $settings['bg_image'] ) ) : ?>
-					background-image: linear-gradient(rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.72)), url('<?php echo esc_url( $settings['bg_image'] ); ?>');
-					background-size: cover;
-					background-position: center;
-					background-attachment: fixed;
-					<?php endif; ?>
-					color: var(--text-color);
-					min-height: 100vh;
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					padding: 24px;
-					text-align: center;
-					line-height: 1.6;
-				}
-				.pmf-card {
-					max-width: 680px;
-					width: 100%;
-					background: rgba(255, 255, 255, 0.05);
-					backdrop-filter: blur(12px);
-					-webkit-backdrop-filter: blur(12px);
-					border: 1px solid rgba(255, 255, 255, 0.12);
-					border-radius: 20px;
-					padding: 48px 36px;
-					box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
-				}
-				h1 {
-					font-size: clamp(1.8rem, 4vw, 2.75rem);
-					font-weight: 800;
-					margin-bottom: 16px;
-					letter-spacing: -0.02em;
-					line-height: 1.2;
-				}
-				.pmf-description {
-					font-size: 1.125rem;
-					opacity: 0.9;
-					margin-bottom: 32px;
-				}
-				/* Countdown Timer */
-				.pmf-countdown {
-					display: grid;
-					grid-template-columns: repeat(4, 1fr);
-					gap: 12px;
-					margin-bottom: 36px;
-				}
-				.pmf-time-box {
-					background: rgba(0, 0, 0, 0.25);
-					border: 1px solid rgba(255, 255, 255, 0.1);
-					border-radius: 12px;
-					padding: 16px 8px;
-				}
-				.pmf-time-val {
-					display: block;
-					font-size: clamp(1.5rem, 3.5vw, 2.25rem);
-					font-weight: 700;
-					color: var(--accent-color);
-					line-height: 1;
-					margin-bottom: 6px;
-				}
-				.pmf-time-label {
-					font-size: 0.75rem;
-					text-transform: uppercase;
-					letter-spacing: 0.08em;
-					opacity: 0.75;
-				}
-				/* Subscription Form */
-				.pmf-subscribe-wrap {
-					margin-bottom: 32px;
-				}
-				.pmf-subscribe-title {
-					font-size: 0.95rem;
-					margin-bottom: 12px;
-					font-weight: 500;
-				}
-				.pmf-form {
-					display: flex;
-					gap: 10px;
-					max-width: 460px;
-					margin: 0 auto;
-				}
-				.pmf-input {
-					flex: 1;
-					padding: 12px 16px;
-					border-radius: 10px;
-					border: 1px solid rgba(255, 255, 255, 0.2);
-					background: rgba(0, 0, 0, 0.3);
-					color: var(--text-color);
-					font-size: 1rem;
-					outline: none;
-				}
-				.pmf-input:focus {
-					border-color: var(--accent-color);
-				}
-				.pmf-btn {
-					padding: 12px 24px;
-					border-radius: 10px;
-					border: none;
-					background: var(--accent-color);
-					color: #ffffff;
-					font-weight: 600;
-					font-size: 1rem;
-					cursor: pointer;
-					transition: opacity 0.2s ease, transform 0.1s ease;
-				}
-				.pmf-btn:hover { opacity: 0.92; }
-				.pmf-btn:active { transform: scale(0.98); }
-				.pmf-msg {
-					margin-top: 10px;
-					font-size: 0.9rem;
-					min-height: 1.4em;
-				}
-				/* Social & Footer Links */
-				.pmf-socials {
-					display: flex;
-					justify-content: center;
-					gap: 16px;
-					flex-wrap: wrap;
-					margin-top: 16px;
-				}
-				.pmf-socials a {
-					color: var(--text-color);
-					opacity: 0.75;
-					text-decoration: none;
-					font-size: 0.9rem;
-					padding: 6px 12px;
-					border-radius: 8px;
-					background: rgba(255, 255, 255, 0.06);
-					transition: all 0.2s ease;
-				}
-				.pmf-socials a:hover {
-					opacity: 1;
-					background: var(--accent-color);
-					color: #fff;
-				}
-				@media (max-width: 520px) {
-					.pmf-card { padding: 32px 20px; }
-					.pmf-form { flex-direction: column; }
-					.pmf-countdown { gap: 8px; }
-				}
-				<?php echo $settings['custom_css']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-			</style>
-		</head>
-		<body>
-			<main class="pmf-card">
-				<h1><?php echo esc_html( $settings['heading'] ); ?></h1>
-				<div class="pmf-description">
-					<?php echo wp_kses
