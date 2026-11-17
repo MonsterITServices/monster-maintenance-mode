@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: Monster Maintenance Mode (100% Free)
+ * Plugin Name: Monster Maintenance Mode
  * Plugin URI:  https://github.com/MonsterITServices/Monster-Maintenance-Mode
  * Description: Full-featured maintenance & coming soon plugin. Features an interactive Admin Dashboard External IP Manager, Direct File Reading controls, 6 selectable visual templates, 200 OK / 503 HTTP modes, live admin preview, countdown timer, AJAX email capture + CSV export, and role/URL bypass.
  * Version:     2.2.0
