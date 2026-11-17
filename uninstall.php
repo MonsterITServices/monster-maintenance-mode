@@ -13,4 +13,5 @@ delete_option( 'mmmode_settings' );
 delete_option( 'pmf_settings' );
 
 global $wpdb;
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}mmmode_subscribers" );
