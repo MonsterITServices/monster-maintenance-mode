@@ -1,5 +1,5 @@
 === Monster Maintenance Mode ===
-Contributors: monsteritservices
+Contributors: monster-it
 Tags: maintenance mode, coming soon, under construction, landing page, countdown
 Requires at least: 5.8
 Tested up to: 6.7
