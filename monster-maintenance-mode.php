@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name:       Monster Maintenance Mode
- * Plugin URI:        https://github.com/MonsterITServices/Monster-Maintenance-Mode
+ * Plugin URI:        https://github.com/MonsterITServices/monster-maintenance-mode
  * Description:       Full-featured maintenance and coming soon plugin. Features an interactive External IP Bypass Manager, direct file reading controls, 6 visual templates, 200 OK / 503 HTTP modes, live preview, countdown timer, and email capture with CSV export.
  * Version:           2.2.0
  * Requires at least: 5.8
- * Tested up to:      6.7
+ * Tested up to:      6.9
  * Requires PHP:      7.4
- * Author:            monster-it
+ * Author:            Monster IT Services Ltd
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       monster-maintenance-mode
@@ -17,6 +17,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Main Plugin Class.
+ */
 class Monster_Maintenance_Mode {
 
 	/**
@@ -30,10 +33,8 @@ class Monster_Maintenance_Mode {
 	 * Constructor.
 	 */
 	public function __construct() {
-		// Lifecycle hooks.
 		register_activation_hook( __FILE__, array( $this, 'activate' ) );
 
-		// Admin hooks.
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_init', array( $this, 'handle_csv_export' ) );
@@ -42,12 +43,10 @@ class Monster_Maintenance_Mode {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_admin_bar_styles' ) );
 		add_action( 'admin_bar_menu', array( $this, 'admin_bar_indicator' ), 100 );
 
-		// Frontend & AJAX hooks.
 		add_action( 'template_redirect', array( $this, 'render_maintenance_page' ), 1 );
 		add_action( 'wp_ajax_mmmode_subscribe', array( $this, 'ajax_subscribe' ) );
 		add_action( 'wp_ajax_nopriv_mmmode_subscribe', array( $this, 'ajax_subscribe' ) );
 
-		// REST API protection.
 		add_filter( 'rest_authentication_errors', array( $this, 'restrict_rest_api' ) );
 	}
 
@@ -140,7 +139,7 @@ class Monster_Maintenance_Mode {
 	}
 
 	/**
-	 * Get merged settings (also migrates legacy pmf_settings if present).
+	 * Get merged settings.
 	 *
 	 * @return array
 	 */
@@ -491,6 +490,7 @@ class Monster_Maintenance_Mode {
 		}
 
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$results = $wpdb->get_results(
 			"SELECT id, email, ip_address, created_at FROM {$wpdb->prefix}mmmode_subscribers ORDER BY created_at DESC",
 			ARRAY_A
@@ -531,13 +531,16 @@ class Monster_Maintenance_Mode {
 		}
 
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
 		$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}mmmode_subscribers" );
+		wp_cache_delete( 'mmmode_subscriber_count', 'monster_maintenance_mode' );
+
 		wp_safe_redirect(
 			add_query_arg(
 				array(
-					'page'             => 'monster-maintenance-mode',
-					'mmmode_cleared'   => '1',
-					'_mmmode_notice'   => wp_create_nonce( 'mmmode_cleared_notice' ),
+					'page'           => 'monster-maintenance-mode',
+					'mmmode_cleared' => '1',
+					'_mmmode_notice' => wp_create_nonce( 'mmmode_cleared_notice' ),
 				),
 				admin_url( 'options-general.php' )
 			)
@@ -557,7 +560,9 @@ class Monster_Maintenance_Mode {
 		}
 
 		global $wpdb;
-		$ip     = $this->get_client_ip();
+		$ip = $this->get_client_ip();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$exists = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT id FROM {$wpdb->prefix}mmmode_subscribers WHERE email = %s",
@@ -569,6 +574,7 @@ class Monster_Maintenance_Mode {
 			wp_send_json_error( array( 'message' => __( 'You are already subscribed!', 'monster-maintenance-mode' ) ) );
 		}
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$inserted = $wpdb->insert(
 			$wpdb->prefix . 'mmmode_subscribers',
 			array(
@@ -580,6 +586,7 @@ class Monster_Maintenance_Mode {
 		);
 
 		if ( $inserted ) {
+			wp_cache_delete( 'mmmode_subscriber_count', 'monster_maintenance_mode' );
 			wp_send_json_success( array( 'message' => __( 'Thank you! We will notify you when we launch.', 'monster-maintenance-mode' ) ) );
 		} else {
 			wp_send_json_error( array( 'message' => __( 'Could not save your email. Please try again.', 'monster-maintenance-mode' ) ) );
@@ -605,12 +612,10 @@ class Monster_Maintenance_Mode {
 				continue;
 			}
 
-			// 1. Exact IP match.
 			if ( 0 === strcasecmp( $client_ip, $rule ) ) {
 				return true;
 			}
 
-			// 2. Wildcard match (e.g. 192.168.1.*).
 			if ( false !== strpos( $rule, '*' ) ) {
 				$regex = '/^' . str_replace( '\*', '[0-9a-fA-F:.]+', preg_quote( $rule, '/' ) ) . '$/i';
 				if ( preg_match( $regex, $client_ip ) ) {
@@ -618,7 +623,6 @@ class Monster_Maintenance_Mode {
 				}
 			}
 
-			// 3. CIDR Subnet match (e.g. 203.0.113.0/24).
 			if ( false !== strpos( $rule, '/' ) ) {
 				list( $subnet, $bits ) = explode( '/', $rule, 2 );
 				$subnet                = trim( $subnet );
@@ -698,7 +702,6 @@ class Monster_Maintenance_Mode {
 	 * @return bool
 	 */
 	private function should_bypass() {
-		// Allow instant live preview for admins via ?mmmode_preview=1.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		if ( isset( $_GET['mmmode_preview'] ) && current_user_can( 'manage_options' ) ) {
 			return false;
@@ -706,12 +709,10 @@ class Monster_Maintenance_Mode {
 
 		$settings = $this->get_settings();
 
-		// 1. Check if maintenance mode is disabled.
 		if ( empty( $settings['status'] ) ) {
 			return true;
 		}
 
-		// 2. Check Auto-Disable on Countdown Expiration.
 		if ( ! empty( $settings['countdown_enabled'] ) && ! empty( $settings['auto_disable'] ) && ! empty( $settings['countdown_end'] ) ) {
 			$end_timestamp = strtotime( $settings['countdown_end'] );
 			if ( $end_timestamp && time() >= $end_timestamp ) {
@@ -721,7 +722,6 @@ class Monster_Maintenance_Mode {
 			}
 		}
 
-		// 3. Always allow WP-CLI, Cron, Admin, Login, and AJAX.
 		if ( defined( 'WP_CLI' ) || wp_doing_cron() || is_admin() || wp_doing_ajax() ) {
 			return true;
 		}
@@ -731,7 +731,6 @@ class Monster_Maintenance_Mode {
 			return true;
 		}
 
-		// 4. Check Logged-in User Roles.
 		if ( is_user_logged_in() ) {
 			if ( current_user_can( 'manage_options' ) ) {
 				return true;
@@ -743,19 +742,16 @@ class Monster_Maintenance_Mode {
 			}
 		}
 
-		// 5. Check External IP Addresses configured in Admin Dashboard.
 		$client_ip = $this->get_client_ip();
 		if ( $this->is_ip_whitelisted( $client_ip, $settings['whitelisted_ips'] ) ) {
 			return true;
 		}
 
-		// 6. Check Direct File Reading & Allowed File Extensions configured in Admin Dashboard.
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
 		if ( $this->is_allowed_file_request( $request_uri, $settings ) ) {
 			return true;
 		}
 
-		// 7. Check Excluded URLs / Slugs / File Directories configured in Admin Dashboard.
 		if ( ! empty( $settings['exclude_urls'] ) && ! empty( $request_uri ) ) {
 			$urls = array_filter( array_map( 'trim', explode( "\n", $settings['exclude_urls'] ) ) );
 			foreach ( $urls as $excluded_path ) {
@@ -765,7 +761,6 @@ class Monster_Maintenance_Mode {
 			}
 		}
 
-		// 8. Check Search Engine Bots.
 		if ( ! empty( $settings['bypass_bots'] ) ) {
 			$user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) ) : '';
 			$bots       = array( 'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider', 'yandexbot', 'facebot', 'ia_archiver' );
@@ -802,7 +797,7 @@ class Monster_Maintenance_Mode {
 	}
 
 	/**
-	 * Helper: Get Visitor IP (Supports Cloudflare, Reverse Proxy, and Direct Remote Addr).
+	 * Helper: Get Visitor IP.
 	 *
 	 * @return string
 	 */
@@ -907,6 +902,242 @@ class Monster_Maintenance_Mode {
 	}
 
 	/**
+	 * Build frontend CSS for the maintenance page.
+	 *
+	 * @param array  $settings      Plugin settings.
+	 * @param string $bg_color      Background hex color.
+	 * @param string $text_color    Text hex color.
+	 * @param string $accent_color  Accent hex color.
+	 * @return string
+	 */
+	private function get_maintenance_css( $settings, $bg_color, $text_color, $accent_color ) {
+		$bg_image_css = '';
+		if ( ! empty( $settings['bg_image'] ) ) {
+			$bg_image_css = "background-image: linear-gradient(rgba(10, 15, 30, 0.75), rgba(10, 15, 30, 0.75)), url('" . esc_url( $settings['bg_image'] ) . "'); background-size: cover; background-position: center; background-attachment: fixed;";
+		}
+
+		$glass_bg_css = '';
+		$neon_bg_css  = '';
+		if ( empty( $settings['bg_image'] ) && empty( $settings['use_custom_colors'] ) ) {
+			$glass_bg_css = 'background: radial-gradient(circle at top left, #1e3a8a, #0f172a 55%, #020617);';
+			$neon_bg_css  = 'background: radial-gradient(circle at center, #240046 0%, #090014 80%);';
+		}
+
+		$custom_css = wp_strip_all_tags( $settings['custom_css'] );
+
+		return ':root {
+			--bg-color: ' . esc_attr( $bg_color ) . ';
+			--text-color: ' . esc_attr( $text_color ) . ';
+			--accent-color: ' . esc_attr( $accent_color ) . ';
+		}
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			background-color: var(--bg-color);
+			color: var(--text-color);
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 24px;
+			line-height: 1.6;
+			position: relative;
+			overflow-x: hidden;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+			' . $bg_image_css . '
+		}
+		.mmmode-badge { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
+		h1 { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 800; margin-bottom: 18px; line-height: 1.15; }
+		.mmmode-description { font-size: 1.125rem; opacity: 0.9; margin-bottom: 32px; }
+		.mmmode-description p { margin-bottom: 12px; }
+		.mmmode-description p:last-child { margin-bottom: 0; }
+		.mmmode-countdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 34px; }
+		.mmmode-time-box { padding: 18px 10px; text-align: center; }
+		.mmmode-time-val { display: block; font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 800; line-height: 1; margin-bottom: 6px; }
+		.mmmode-time-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.75; }
+		.mmmode-subscribe-wrap { margin-bottom: 28px; }
+		.mmmode-subscribe-title { font-size: 0.95rem; margin-bottom: 12px; font-weight: 600; }
+		.mmmode-form { display: flex; gap: 10px; width: 100%; }
+		.mmmode-input { flex: 1; padding: 13px 16px; font-size: 1rem; outline: none; }
+		.mmmode-btn { padding: 13px 26px; font-weight: 700; font-size: 1rem; cursor: pointer; transition: all 0.2s ease; }
+		.mmmode-msg { margin-top: 10px; font-size: 0.9rem; min-height: 1.4em; }
+		.mmmode-socials { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+		.mmmode-socials a { color: var(--text-color); text-decoration: none; font-size: 0.88rem; padding: 7px 14px; transition: all 0.2s ease; }
+
+		body.tpl-glass { ' . $glass_bg_css . ' text-align: center; }
+		.tpl-glass .mmmode-container { max-width: 680px; width: 100%; background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 24px; padding: 52px 40px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+		.tpl-glass .mmmode-badge { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
+		.tpl-glass .mmmode-time-box { background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; }
+		.tpl-glass .mmmode-time-val { color: var(--accent-color); }
+		.tpl-glass .mmmode-form { max-width: 480px; margin: 0 auto; }
+		.tpl-glass .mmmode-input { border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--text-color); }
+		.tpl-glass .mmmode-btn { border-radius: 12px; border: none; background: var(--accent-color); color: #fff; }
+		.tpl-glass .mmmode-socials { justify-content: center; }
+		.tpl-glass .mmmode-socials a { border-radius: 8px; background: rgba(255, 255, 255, 0.07); }
+		.tpl-glass .mmmode-socials a:hover { background: var(--accent-color); color: #fff; }
+
+		.tpl-split .mmmode-container { max-width: 1120px; width: 100%; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; padding: 56px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45); }
+		.tpl-split .mmmode-badge { background: rgba(16, 185, 129, 0.15); color: var(--accent-color); border: 1px solid var(--accent-color); }
+		.tpl-split .mmmode-right-panel { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 36px 30px; }
+		.tpl-split .mmmode-time-box { background: rgba(0, 0, 0, 0.35); border-radius: 10px; border-bottom: 3px solid var(--accent-color); }
+		.tpl-split .mmmode-time-val { color: var(--accent-color); }
+		.tpl-split .mmmode-form { flex-direction: column; }
+		.tpl-split .mmmode-input { border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.4); color: var(--text-color); }
+		.tpl-split .mmmode-btn { border-radius: 10px; border: none; background: var(--accent-color); color: #052e16; }
+		.tpl-split .mmmode-socials a { border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; }
+		.tpl-split .mmmode-socials a:hover { border-color: var(--accent-color); color: var(--accent-color); }
+
+		body.tpl-editorial { font-family: "Times New Roman", Times, Georgia, serif; text-align: center; }
+		.tpl-editorial .mmmode-container { max-width: 660px; width: 100%; background: #ffffff; color: #000000; border: 2px solid #000000; padding: 56px 44px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06); }
+		.tpl-editorial .mmmode-badge { border-radius: 0; border: 1px solid #000000; background: #000000; color: #ffffff; font-family: -apple-system, sans-serif; font-size: 0.7rem; }
+		.tpl-editorial h1 { font-weight: 700; letter-spacing: -0.01em; border-bottom: 1px solid #000000; padding-bottom: 20px; margin-bottom: 24px; }
+		.tpl-editorial .mmmode-description { font-size: 1.15rem; color: #18181b; }
+		.tpl-editorial .mmmode-time-box { border: 1px solid #000000; background: #fafafa; }
+		.tpl-editorial .mmmode-time-val { color: #000000; font-weight: 700; }
+		.tpl-editorial .mmmode-time-label { font-family: -apple-system, sans-serif; color: #3f3f46; }
+		.tpl-editorial .mmmode-form { max-width: 460px; margin: 0 auto; }
+		.tpl-editorial .mmmode-input { border: 1px solid #000000; background: #ffffff; color: #000000; font-family: inherit; }
+		.tpl-editorial .mmmode-btn { border: 1px solid #000000; background: #000000; color: #ffffff; font-family: -apple-system, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85rem; }
+		.tpl-editorial .mmmode-btn:hover { background: #ffffff; color: #000000; }
+		.tpl-editorial .mmmode-socials { justify-content: center; border-top: 1px solid #e4e4e7; padding-top: 20px; }
+		.tpl-editorial .mmmode-socials a { color: #000000; text-decoration: underline; font-style: italic; }
+
+		body.tpl-terminal { font-family: "Courier New", Courier, Consolas, monospace; }
+		.tpl-terminal .mmmode-container { max-width: 740px; width: 100%; background: rgba(8, 12, 8, 0.94); border: 1px solid var(--accent-color); border-radius: 8px; box-shadow: 0 0 35px rgba(34, 197, 94, 0.2); overflow: hidden; }
+		.tpl-terminal .mmmode-term-bar { background: #111a11; border-bottom: 1px solid var(--accent-color); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+		.tpl-terminal .mmmode-term-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+		.tpl-terminal .mmmode-term-title { margin-left: 10px; font-size: 0.8rem; opacity: 0.8; }
+		.tpl-terminal .mmmode-term-body { padding: 36px 32px; }
+		.tpl-terminal .mmmode-badge { border: 1px dashed var(--accent-color); border-radius: 0; color: var(--accent-color); }
+		.tpl-terminal h1::before { content: "> "; opacity: 0.7; }
+		.tpl-terminal .mmmode-time-box { border: 1px solid var(--accent-color); background: rgba(34, 197, 94, 0.05); }
+		.tpl-terminal .mmmode-time-val { color: var(--accent-color); text-shadow: 0 0 10px rgba(34, 197, 94, 0.6); }
+		.tpl-terminal .mmmode-input { background: #000000; border: 1px solid var(--accent-color); color: var(--accent-color); font-family: inherit; }
+		.tpl-terminal .mmmode-btn { background: var(--accent-color); color: #000000; border: 1px solid var(--accent-color); font-family: inherit; text-transform: uppercase; }
+		.tpl-terminal .mmmode-socials a { border: 1px solid rgba(34, 197, 94, 0.4); color: var(--accent-color); }
+		.tpl-terminal .mmmode-socials a:hover { background: var(--accent-color); color: #000000; }
+
+		body.tpl-neon { text-align: center; ' . $neon_bg_css . ' }
+		.tpl-neon .mmmode-cyber-grid { position: fixed; bottom: 0; left: -50%; width: 200%; height: 45vh; background-image: linear-gradient(to right, rgba(247, 37, 133, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(76, 201, 240, 0.35) 1px, transparent 1px); background-size: 40px 40px; transform: perspective(300px) rotateX(65deg); z-index: 0; pointer-events: none; }
+		.tpl-neon .mmmode-container { position: relative; z-index: 2; max-width: 700px; width: 100%; background: rgba(15, 3, 38, 0.85); border: 2px solid var(--accent-color); box-shadow: 0 0 30px rgba(247, 37, 133, 0.4), inset 0 0 20px rgba(76, 201, 240, 0.2); border-radius: 16px; padding: 48px 36px; }
+		.tpl-neon .mmmode-badge { background: transparent; border: 1px solid #4cc9f0; color: #4cc9f0; box-shadow: 0 0 12px rgba(76, 201, 240, 0.4); }
+		.tpl-neon h1 { text-shadow: 0 0 18px var(--accent-color); }
+		.tpl-neon .mmmode-time-box { background: rgba(0, 0, 0, 0.55); border: 1px solid #4cc9f0; border-radius: 10px; box-shadow: 0 0 15px rgba(76, 201, 240, 0.25); }
+		.tpl-neon .mmmode-time-val { color: #4cc9f0; text-shadow: 0 0 10px #4cc9f0; }
+		.tpl-neon .mmmode-form { max-width: 480px; margin: 0 auto; }
+		.tpl-neon .mmmode-input { background: rgba(0, 0, 0, 0.6); border: 1px solid var(--accent-color); color: #ffffff; border-radius: 8px; }
+		.tpl-neon .mmmode-btn { background: var(--accent-color); color: #ffffff; border: none; border-radius: 8px; box-shadow: 0 0 18px var(--accent-color); text-transform: uppercase; }
+		.tpl-neon .mmmode-socials { justify-content: center; }
+		.tpl-neon .mmmode-socials a { border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; }
+		.tpl-neon .mmmode-socials a:hover { border-color: #4cc9f0; box-shadow: 0 0 12px #4cc9f0; }
+
+		.tpl-brutalist .mmmode-container { max-width: 680px; width: 100%; background: #ffffff; color: #000000; border: 4px solid #000000; box-shadow: 12px 12px 0px #000000; padding: 48px 40px; text-align: left; }
+		.tpl-brutalist .mmmode-badge { background: #000000; color: #facc15; border-radius: 0; font-weight: 900; }
+		.tpl-brutalist h1 { text-transform: uppercase; font-weight: 900; letter-spacing: -0.03em; }
+		.tpl-brutalist .mmmode-time-box { background: var(--bg-color); border: 3px solid #000000; box-shadow: 5px 5px 0px #000000; }
+		.tpl-brutalist .mmmode-time-val { color: #000000; font-weight: 900; }
+		.tpl-brutalist .mmmode-time-label { color: #000000; font-weight: 700; opacity: 1; }
+		.tpl-brutalist .mmmode-input { border: 3px solid #000000; background: #ffffff; color: #000000; font-weight: 600; }
+		.tpl-brutalist .mmmode-btn { background: #000000; color: #ffffff; border: 3px solid #000000; text-transform: uppercase; font-weight: 900; box-shadow: 5px 5px 0px #000000; }
+		.tpl-brutalist .mmmode-btn:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0px #000000; }
+		.tpl-brutalist .mmmode-socials a { background: #ffffff; color: #000000; border: 2px solid #000000; font-weight: 700; box-shadow: 3px 3px 0px #000000; }
+
+		@media (max-width: 860px) {
+			.tpl-split .mmmode-container { grid-template-columns: 1fr; padding: 36px 24px; gap: 28px; }
+		}
+		@media (max-width: 540px) {
+			.mmmode-container { padding: 32px 20px !important; }
+			.mmmode-form { flex-direction: column; }
+			.mmmode-countdown { grid-template-columns: repeat(2, 1fr); }
+		}
+		' . $custom_css;
+	}
+
+	/**
+	 * Build frontend JS for the maintenance page.
+	 *
+	 * @param array $settings   Plugin settings.
+	 * @param bool  $is_preview Whether admin preview is active.
+	 * @return string
+	 */
+	private function get_maintenance_js( $settings, $is_preview ) {
+		$reload_js = ( ! empty( $settings['auto_disable'] ) && ! $is_preview ) ? 'window.location.reload();' : '';
+
+		return '(function() {
+			var countdownEl = document.getElementById("mmmode-countdown");
+			if (countdownEl) {
+				var endTime = parseInt(countdownEl.getAttribute("data-end"), 10);
+				var updateTimer = function() {
+					var now = new Date().getTime();
+					var diff = endTime - now;
+					if (diff <= 0) {
+						document.getElementById("mmmode-days").textContent = "00";
+						document.getElementById("mmmode-hours").textContent = "00";
+						document.getElementById("mmmode-mins").textContent = "00";
+						document.getElementById("mmmode-secs").textContent = "00";
+						' . $reload_js . '
+						return;
+					}
+					var d = Math.floor(diff / (1000 * 60 * 60 * 24));
+					var h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+					var m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+					var s = Math.floor((diff % (1000 * 60)) / 1000);
+
+					document.getElementById("mmmode-days").textContent = String(d).padStart(2, "0");
+					document.getElementById("mmmode-hours").textContent = String(h).padStart(2, "0");
+					document.getElementById("mmmode-mins").textContent = String(m).padStart(2, "0");
+					document.getElementById("mmmode-secs").textContent = String(s).padStart(2, "0");
+				};
+				updateTimer();
+				setInterval(updateTimer, 1000);
+			}
+
+			var form = document.getElementById("mmmode-subscribe-form");
+			if (form) {
+				form.addEventListener("submit", function(e) {
+					e.preventDefault();
+					var emailInput = document.getElementById("mmmode-email");
+					var submitBtn = document.getElementById("mmmode-submit");
+					var responseEl = document.getElementById("mmmode-response");
+
+					submitBtn.disabled = true;
+					submitBtn.textContent = "' . esc_js( __( 'Saving...', 'monster-maintenance-mode' ) ) . '";
+					responseEl.textContent = "";
+
+					var formData = new URLSearchParams();
+					formData.append("action", "mmmode_subscribe");
+					formData.append("nonce", "' . esc_js( wp_create_nonce( 'mmmode_subscribe_nonce' ) ) . '");
+					formData.append("email", emailInput.value);
+
+					fetch("' . esc_url( admin_url( 'admin-ajax.php' ) ) . '", {
+						method: "POST",
+						headers: { "Content-Type": "application/x-www-form-urlencoded" },
+						body: formData.toString()
+					})
+					.then(function(res) { return res.json(); })
+					.then(function(data) {
+						submitBtn.disabled = false;
+						submitBtn.textContent = "' . esc_js( __( 'Notify Me', 'monster-maintenance-mode' ) ) . '";
+						if (data.success) {
+							responseEl.style.color = "#10b981";
+							responseEl.textContent = data.data.message;
+							emailInput.value = "";
+						} else {
+							responseEl.style.color = "#ef4444";
+							responseEl.textContent = data.data ? data.data.message : "' . esc_js( __( 'An error occurred.', 'monster-maintenance-mode' ) ) . '";
+						}
+					})
+					.catch(function() {
+						submitBtn.disabled = false;
+						submitBtn.textContent = "' . esc_js( __( 'Notify Me', 'monster-maintenance-mode' ) ) . '";
+						responseEl.style.color = "#ef4444";
+						responseEl.textContent = "' . esc_js( __( 'Connection error. Please try again.', 'monster-maintenance-mode' ) ) . '";
+					});
+				});
+			}
+		})();';
+	}
+
+	/**
 	 * Render the Frontend Maintenance Page with Selected Template.
 	 */
 	public function render_maintenance_page() {
@@ -916,8 +1147,7 @@ class Monster_Maintenance_Mode {
 
 		$settings = $this->get_settings();
 
-		// Allow ?mmmode_template=slug override when admin is previewing.
-		$template   = $settings['template'];
+		$template = $settings['template'];
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$is_preview = isset( $_GET['mmmode_preview'] ) && current_user_can( 'manage_options' );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -929,7 +1159,6 @@ class Monster_Maintenance_Mode {
 			}
 		}
 
-		// Send HTTP Status Header (200 OK Coming Soon vs 503 Maintenance).
 		nocache_headers();
 		$protocol = wp_get_server_protocol();
 		if ( '503' === $settings['http_status'] && ! $is_preview ) {
@@ -940,7 +1169,6 @@ class Monster_Maintenance_Mode {
 			status_header( 200 );
 		}
 
-		// Determine template palette or user custom overrides.
 		$palettes = array(
 			'glass'     => array( 'bg' => '#0f172a', 'text' => '#f8fafc', 'accent' => '#3b82f6' ),
 			'split'     => array( 'bg' => '#0b0f19', 'text' => '#f9fafb', 'accent' => '#10b981' ),
@@ -956,6 +1184,15 @@ class Monster_Maintenance_Mode {
 		$accent_color   = ! empty( $settings['use_custom_colors'] ) ? $settings['accent_color'] : $active_palette['accent'];
 
 		$end_timestamp = ! empty( $settings['countdown_end'] ) ? strtotime( $settings['countdown_end'] ) * 1000 : 0;
+
+		// Register and enqueue standalone styles and scripts via WP APIs.
+		wp_register_style( 'mmmode-frontend', false, array(), '2.2.0' );
+		wp_enqueue_style( 'mmmode-frontend' );
+		wp_add_inline_style( 'mmmode-frontend', $this->get_maintenance_css( $settings, $bg_color, $text_color, $accent_color ) );
+
+		wp_register_script( 'mmmode-frontend', false, array(), '2.2.0', true );
+		wp_enqueue_script( 'mmmode-frontend' );
+		wp_add_inline_script( 'mmmode-frontend', $this->get_maintenance_js( $settings, $is_preview ) );
 		?>
 		<!DOCTYPE html>
 		<html <?php language_attributes(); ?>>
@@ -964,155 +1201,7 @@ class Monster_Maintenance_Mode {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0">
 			<meta name="robots" content="noindex, nofollow">
 			<title><?php echo esc_html( $settings['page_title'] ); ?></title>
-			<style>
-				:root {
-					--bg-color: <?php echo esc_attr( $bg_color ); ?>;
-					--text-color: <?php echo esc_attr( $text_color ); ?>;
-					--accent-color: <?php echo esc_attr( $accent_color ); ?>;
-				}
-				* { box-sizing: border-box; margin: 0; padding: 0; }
-				body {
-					background-color: var(--bg-color);
-					color: var(--text-color);
-					min-height: 100vh;
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					padding: 24px;
-					line-height: 1.6;
-					position: relative;
-					overflow-x: hidden;
-					font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-					<?php if ( ! empty( $settings['bg_image'] ) ) : ?>
-					background-image: linear-gradient(rgba(10, 15, 30, 0.75), rgba(10, 15, 30, 0.75)), url('<?php echo esc_url( $settings['bg_image'] ); ?>');
-					background-size: cover;
-					background-position: center;
-					background-attachment: fixed;
-					<?php endif; ?>
-				}
-
-				.mmmode-badge { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
-				h1 { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 800; margin-bottom: 18px; line-height: 1.15; }
-				.mmmode-description { font-size: 1.125rem; opacity: 0.9; margin-bottom: 32px; }
-				.mmmode-description p { margin-bottom: 12px; }
-				.mmmode-description p:last-child { margin-bottom: 0; }
-				.mmmode-countdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 34px; }
-				.mmmode-time-box { padding: 18px 10px; text-align: center; }
-				.mmmode-time-val { display: block; font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 800; line-height: 1; margin-bottom: 6px; }
-				.mmmode-time-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.75; }
-				.mmmode-subscribe-wrap { margin-bottom: 28px; }
-				.mmmode-subscribe-title { font-size: 0.95rem; margin-bottom: 12px; font-weight: 600; }
-				.mmmode-form { display: flex; gap: 10px; width: 100%; }
-				.mmmode-input { flex: 1; padding: 13px 16px; font-size: 1rem; outline: none; }
-				.mmmode-btn { padding: 13px 26px; font-weight: 700; font-size: 1rem; cursor: pointer; transition: all 0.2s ease; }
-				.mmmode-msg { margin-top: 10px; font-size: 0.9rem; min-height: 1.4em; }
-				.mmmode-socials { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-				.mmmode-socials a { color: var(--text-color); text-decoration: none; font-size: 0.88rem; padding: 7px 14px; transition: all 0.2s ease; }
-
-				/* TEMPLATE 1: MODERN GLASSMORPHISM */
-				body.tpl-glass {
-					<?php if ( empty( $settings['bg_image'] ) && empty( $settings['use_custom_colors'] ) ) : ?>
-					background: radial-gradient(circle at top left, #1e3a8a, #0f172a 55%, #020617);
-					<?php endif; ?>
-					text-align: center;
-				}
-				.tpl-glass .mmmode-container { max-width: 680px; width: 100%; background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 24px; padding: 52px 40px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
-				.tpl-glass .mmmode-badge { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
-				.tpl-glass .mmmode-time-box { background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; }
-				.tpl-glass .mmmode-time-val { color: var(--accent-color); }
-				.tpl-glass .mmmode-form { max-width: 480px; margin: 0 auto; }
-				.tpl-glass .mmmode-input { border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--text-color); }
-				.tpl-glass .mmmode-btn { border-radius: 12px; border: none; background: var(--accent-color); color: #fff; }
-				.tpl-glass .mmmode-socials { justify-content: center; }
-				.tpl-glass .mmmode-socials a { border-radius: 8px; background: rgba(255, 255, 255, 0.07); }
-				.tpl-glass .mmmode-socials a:hover { background: var(--accent-color); color: #fff; }
-
-				/* TEMPLATE 2: CORPORATE SPLIT-SCREEN */
-				.tpl-split .mmmode-container { max-width: 1120px; width: 100%; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; padding: 56px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45); }
-				.tpl-split .mmmode-badge { background: rgba(16, 185, 129, 0.15); color: var(--accent-color); border: 1px solid var(--accent-color); }
-				.tpl-split .mmmode-right-panel { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 36px 30px; }
-				.tpl-split .mmmode-time-box { background: rgba(0, 0, 0, 0.35); border-radius: 10px; border-bottom: 3px solid var(--accent-color); }
-				.tpl-split .mmmode-time-val { color: var(--accent-color); }
-				.tpl-split .mmmode-form { flex-direction: column; }
-				.tpl-split .mmmode-input { border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.4); color: var(--text-color); }
-				.tpl-split .mmmode-btn { border-radius: 10px; border: none; background: var(--accent-color); color: #052e16; }
-				.tpl-split .mmmode-socials a { border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; }
-				.tpl-split .mmmode-socials a:hover { border-color: var(--accent-color); color: var(--accent-color); }
-
-				/* TEMPLATE 3: MINIMALIST EDITORIAL (SERIF) */
-				body.tpl-editorial { font-family: "Times New Roman", Times, Georgia, serif; text-align: center; }
-				.tpl-editorial .mmmode-container { max-width: 660px; width: 100%; background: #ffffff; color: #000000; border: 2px solid #000000; padding: 56px 44px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06); }
-				.tpl-editorial .mmmode-badge { border-radius: 0; border: 1px solid #000000; background: #000000; color: #ffffff; font-family: -apple-system, sans-serif; font-size: 0.7rem; }
-				.tpl-editorial h1 { font-weight: 700; letter-spacing: -0.01em; border-bottom: 1px solid #000000; padding-bottom: 20px; margin-bottom: 24px; }
-				.tpl-editorial .mmmode-description { font-size: 1.15rem; color: #18181b; }
-				.tpl-editorial .mmmode-time-box { border: 1px solid #000000; background: #fafafa; }
-				.tpl-editorial .mmmode-time-val { color: #000000; font-weight: 700; }
-				.tpl-editorial .mmmode-time-label { font-family: -apple-system, sans-serif; color: #3f3f46; }
-				.tpl-editorial .mmmode-form { max-width: 460px; margin: 0 auto; }
-				.tpl-editorial .mmmode-input { border: 1px solid #000000; background: #ffffff; color: #000000; font-family: inherit; }
-				.tpl-editorial .mmmode-btn { border: 1px solid #000000; background: #000000; color: #ffffff; font-family: -apple-system, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85rem; }
-				.tpl-editorial .mmmode-btn:hover { background: #ffffff; color: #000000; }
-				.tpl-editorial .mmmode-socials { justify-content: center; border-top: 1px solid #e4e4e7; padding-top: 20px; }
-				.tpl-editorial .mmmode-socials a { color: #000000; text-decoration: underline; font-style: italic; }
-
-				/* TEMPLATE 4: CYBER TERMINAL (MATRIX) */
-				body.tpl-terminal { font-family: "Courier New", Courier, Consolas, monospace; }
-				.tpl-terminal .mmmode-container { max-width: 740px; width: 100%; background: rgba(8, 12, 8, 0.94); border: 1px solid var(--accent-color); border-radius: 8px; box-shadow: 0 0 35px rgba(34, 197, 94, 0.2); overflow: hidden; }
-				.tpl-terminal .mmmode-term-bar { background: #111a11; border-bottom: 1px solid var(--accent-color); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
-				.tpl-terminal .mmmode-term-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
-				.tpl-terminal .mmmode-term-title { margin-left: 10px; font-size: 0.8rem; opacity: 0.8; }
-				.tpl-terminal .mmmode-term-body { padding: 36px 32px; }
-				.tpl-terminal .mmmode-badge { border: 1px dashed var(--accent-color); border-radius: 0; color: var(--accent-color); }
-				.tpl-terminal h1::before { content: "> "; opacity: 0.7; }
-				.tpl-terminal .mmmode-time-box { border: 1px solid var(--accent-color); background: rgba(34, 197, 94, 0.05); }
-				.tpl-terminal .mmmode-time-val { color: var(--accent-color); text-shadow: 0 0 10px rgba(34, 197, 94, 0.6); }
-				.tpl-terminal .mmmode-input { background: #000000; border: 1px solid var(--accent-color); color: var(--accent-color); font-family: inherit; }
-				.tpl-terminal .mmmode-btn { background: var(--accent-color); color: #000000; border: 1px solid var(--accent-color); font-family: inherit; text-transform: uppercase; }
-				.tpl-terminal .mmmode-socials a { border: 1px solid rgba(34, 197, 94, 0.4); color: var(--accent-color); }
-				.tpl-terminal .mmmode-socials a:hover { background: var(--accent-color); color: #000000; }
-
-				/* TEMPLATE 5: NEON SYNTHWAVE GRID */
-				body.tpl-neon {
-					text-align: center;
-					<?php if ( empty( $settings['bg_image'] ) && empty( $settings['use_custom_colors'] ) ) : ?>
-					background: radial-gradient(circle at center, #240046 0%, #090014 80%);
-					<?php endif; ?>
-				}
-				.tpl-neon .mmmode-cyber-grid { position: fixed; bottom: 0; left: -50%; width: 200%; height: 45vh; background-image: linear-gradient(to right, rgba(247, 37, 133, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(76, 201, 240, 0.35) 1px, transparent 1px); background-size: 40px 40px; transform: perspective(300px) rotateX(65deg); z-index: 0; pointer-events: none; }
-				.tpl-neon .mmmode-container { position: relative; z-index: 2; max-width: 700px; width: 100%; background: rgba(15, 3, 38, 0.85); border: 2px solid var(--accent-color); box-shadow: 0 0 30px rgba(247, 37, 133, 0.4), inset 0 0 20px rgba(76, 201, 240, 0.2); border-radius: 16px; padding: 48px 36px; }
-				.tpl-neon .mmmode-badge { background: transparent; border: 1px solid #4cc9f0; color: #4cc9f0; box-shadow: 0 0 12px rgba(76, 201, 240, 0.4); }
-				.tpl-neon h1 { text-shadow: 0 0 18px var(--accent-color); }
-				.tpl-neon .mmmode-time-box { background: rgba(0, 0, 0, 0.55); border: 1px solid #4cc9f0; border-radius: 10px; box-shadow: 0 0 15px rgba(76, 201, 240, 0.25); }
-				.tpl-neon .mmmode-time-val { color: #4cc9f0; text-shadow: 0 0 10px #4cc9f0; }
-				.tpl-neon .mmmode-form { max-width: 480px; margin: 0 auto; }
-				.tpl-neon .mmmode-input { background: rgba(0, 0, 0, 0.6); border: 1px solid var(--accent-color); color: #ffffff; border-radius: 8px; }
-				.tpl-neon .mmmode-btn { background: var(--accent-color); color: #ffffff; border: none; border-radius: 8px; box-shadow: 0 0 18px var(--accent-color); text-transform: uppercase; }
-				.tpl-neon .mmmode-socials { justify-content: center; }
-				.tpl-neon .mmmode-socials a { border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; }
-				.tpl-neon .mmmode-socials a:hover { border-color: #4cc9f0; box-shadow: 0 0 12px #4cc9f0; }
-
-				/* TEMPLATE 6: BOLD INDUSTRIAL BRUTALIST */
-				.tpl-brutalist .mmmode-container { max-width: 680px; width: 100%; background: #ffffff; color: #000000; border: 4px solid #000000; box-shadow: 12px 12px 0px #000000; padding: 48px 40px; text-align: left; }
-				.tpl-brutalist .mmmode-badge { background: #000000; color: #facc15; border-radius: 0; font-weight: 900; }
-				.tpl-brutalist h1 { text-transform: uppercase; font-weight: 900; letter-spacing: -0.03em; }
-				.tpl-brutalist .mmmode-time-box { background: var(--bg-color); border: 3px solid #000000; box-shadow: 5px 5px 0px #000000; }
-				.tpl-brutalist .mmmode-time-val { color: #000000; font-weight: 900; }
-				.tpl-brutalist .mmmode-time-label { color: #000000; font-weight: 700; opacity: 1; }
-				.tpl-brutalist .mmmode-input { border: 3px solid #000000; background: #ffffff; color: #000000; font-weight: 600; }
-				.tpl-brutalist .mmmode-btn { background: #000000; color: #ffffff; border: 3px solid #000000; text-transform: uppercase; font-weight: 900; box-shadow: 5px 5px 0px #000000; }
-				.tpl-brutalist .mmmode-btn:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0px #000000; }
-				.tpl-brutalist .mmmode-socials a { background: #ffffff; color: #000000; border: 2px solid #000000; font-weight: 700; box-shadow: 3px 3px 0px #000000; }
-
-				@media (max-width: 860px) {
-					.tpl-split .mmmode-container { grid-template-columns: 1fr; padding: 36px 24px; gap: 28px; }
-				}
-				@media (max-width: 540px) {
-					.mmmode-container { padding: 32px 20px !important; }
-					.mmmode-form { flex-direction: column; }
-					.mmmode-countdown { grid-template-columns: repeat(2, 1fr); }
-				}
-				<?php echo esc_html( wp_strip_all_tags( $settings['custom_css'] ) ); ?>
-			</style>
+			<?php wp_print_styles( 'mmmode-frontend' ); ?>
 		</head>
 		<body class="tpl-<?php echo esc_attr( $template ); ?>">
 
@@ -1175,83 +1264,7 @@ class Monster_Maintenance_Mode {
 				</main>
 			<?php endif; ?>
 
-			<script>
-				(function() {
-					const countdownEl = document.getElementById('mmmode-countdown');
-					if (countdownEl) {
-						const endTime = parseInt(countdownEl.getAttribute('data-end'), 10);
-						const updateTimer = () => {
-							const now = new Date().getTime();
-							const diff = endTime - now;
-							if (diff <= 0) {
-								document.getElementById('mmmode-days').textContent = '00';
-								document.getElementById('mmmode-hours').textContent = '00';
-								document.getElementById('mmmode-mins').textContent = '00';
-								document.getElementById('mmmode-secs').textContent = '00';
-								<?php if ( ! empty( $settings['auto_disable'] ) && ! $is_preview ) : ?>
-								window.location.reload();
-								<?php endif; ?>
-								return;
-							}
-							const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-							const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-							const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-							const s = Math.floor((diff % (1000 * 60)) / 1000);
-
-							document.getElementById('mmmode-days').textContent = String(d).padStart(2, '0');
-							document.getElementById('mmmode-hours').textContent = String(h).padStart(2, '0');
-							document.getElementById('mmmode-mins').textContent = String(m).padStart(2, '0');
-							document.getElementById('mmmode-secs').textContent = String(s).padStart(2, '0');
-						};
-						updateTimer();
-						setInterval(updateTimer, 1000);
-					}
-
-					const form = document.getElementById('mmmode-subscribe-form');
-					if (form) {
-						form.addEventListener('submit', function(e) {
-							e.preventDefault();
-							const emailInput = document.getElementById('mmmode-email');
-							const submitBtn = document.getElementById('mmmode-submit');
-							const responseEl = document.getElementById('mmmode-response');
-
-							submitBtn.disabled = true;
-							submitBtn.textContent = '<?php echo esc_js( __( 'Saving...', 'monster-maintenance-mode' ) ); ?>';
-							responseEl.textContent = '';
-
-							const formData = new URLSearchParams();
-							formData.append('action', 'mmmode_subscribe');
-							formData.append('nonce', '<?php echo esc_js( wp_create_nonce( 'mmmode_subscribe_nonce' ) ); ?>');
-							formData.append('email', emailInput.value);
-
-							fetch('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-								body: formData.toString()
-							})
-							.then(res => res.json())
-							.then(data => {
-								submitBtn.disabled = false;
-								submitBtn.textContent = '<?php echo esc_js( __( 'Notify Me', 'monster-maintenance-mode' ) ); ?>';
-								if (data.success) {
-									responseEl.style.color = '#10b981';
-									responseEl.textContent = data.data.message;
-									emailInput.value = '';
-								} else {
-									responseEl.style.color = '#ef4444';
-									responseEl.textContent = data.data ? data.data.message : '<?php echo esc_js( __( 'An error occurred.', 'monster-maintenance-mode' ) ); ?>';
-								}
-							})
-							.catch(() => {
-								submitBtn.disabled = false;
-								submitBtn.textContent = '<?php echo esc_js( __( 'Notify Me', 'monster-maintenance-mode' ) ); ?>';
-								responseEl.style.color = '#ef4444';
-								responseEl.textContent = '<?php echo esc_js( __( 'Connection error. Please try again.', 'monster-maintenance-mode' ) ); ?>';
-							});
-						});
-					}
-				})();
-			</script>
+			<?php wp_print_scripts( 'mmmode-frontend' ); ?>
 		</body>
 		</html>
 		<?php
@@ -1267,12 +1280,19 @@ class Monster_Maintenance_Mode {
 		}
 
 		global $wpdb;
-		$settings         = $this->get_settings();
-		$templates        = $this->get_templates();
-		$subscriber_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}mmmode_subscribers" );
-		$editable_roles   = get_editable_roles();
-		$preview_url      = add_query_arg( 'mmmode_preview', '1', home_url( '/' ) );
-		$current_ip       = $this->get_client_ip();
+		$settings  = $this->get_settings();
+		$templates = $this->get_templates();
+
+		$subscriber_count = wp_cache_get( 'mmmode_subscriber_count', 'monster_maintenance_mode' );
+		if ( false === $subscriber_count ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+			$subscriber_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}mmmode_subscribers" );
+			wp_cache_set( 'mmmode_subscriber_count', $subscriber_count, 'monster_maintenance_mode', 300 );
+		}
+
+		$editable_roles = get_editable_roles();
+		$preview_url    = add_query_arg( 'mmmode_preview', '1', home_url( '/' ) );
+		$current_ip     = $this->get_client_ip();
 		?>
 		<div class="wrap">
 			<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
