@@ -1,8 +1,8 @@
 === Monster Maintenance Mode ===
-Contributors: monster-it
+Contributors: monsteritservices
 Tags: maintenance mode, coming soon, under construction, landing page, countdown
 Requires at least: 5.8
-Tested up to: 6.7
+Tested up to: 6.9
 Requires PHP: 7.4
 Stable tag: 2.2.0
 License: GPLv2 or later
@@ -12,7 +12,7 @@ Full-featured maintenance & coming soon plugin with 6 visual templates, External
 
 == Description ==
 
-**Monster Maintenance Mode** is a lightweight, self-contained Maintenance Mode and Coming Soon plugin for WordPress with zero external CDN dependencies and no paid upsells.
+**Monster Maintenance Mode** is a lightweight, self-contained Maintenance Mode and Coming Soon plugin for WordPress with zero external CDN dependencies.
 
 = Key Features =
 
@@ -42,19 +42,10 @@ Yes. In the **External IP Bypass Manager**, add your client's IP address, wildca
 = Can direct links to PDFs, ZIPs, or media files still work during maintenance? =
 Yes. When **Allow Direct File Reading** is enabled, any direct request matching your configured extensions list or excluded folder paths will bypass the maintenance screen.
 
-= What is the difference between 200 OK and 503 Service Unavailable? =
-Use **200 OK** when launching a new site ("Coming Soon") so proxies, CDNs, and browsers treat the page as normal content. Use **503 Service Unavailable** during short-term maintenance on an established site so search engines know to come back later without indexing the maintenance message.
-
-== Screenshots ==
-
-1. Admin Dashboard — Status, HTTP Header Mode, and External IP Bypass Manager.
-2. Template Selector — 6 built-in visual templates with one-click live preview.
-3. Modern Glassmorphism & Cyber Terminal frontend templates.
-
 == Changelog ==
 
 = 2.2.0 =
-* Prepared release for WordPress.org Plugin Directory compliance.
+* Initial release prepared for the WordPress.org Plugin Directory.
 * Added interactive External IP Bypass Manager with CIDR subnet, wildcard, and one-click current IP support.
 * Added Direct File Reading extension controls and attachment bypass options.
 * Added 6 selectable visual templates with live admin preview and custom color overrides.
