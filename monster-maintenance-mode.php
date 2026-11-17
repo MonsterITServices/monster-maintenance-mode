@@ -5,7 +5,6 @@
  * Description:       Full-featured maintenance and coming soon plugin. Features an interactive External IP Bypass Manager, direct file reading controls, 6 visual templates, 200 OK / 503 HTTP modes, live preview, countdown timer, and email capture with CSV export.
  * Version:           2.2.0
  * Requires at least: 5.8
- * Tested up to:      6.9
  * Requires PHP:      7.4
  * Author:            Monster IT Services Ltd
  * License:           GPLv2 or later
